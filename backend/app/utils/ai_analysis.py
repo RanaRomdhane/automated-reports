@@ -1,3 +1,8 @@
+import os
+# Set environment variable to handle joblib/loky warning
+os.environ['LOKY_MAX_CPU_COUNT'] = '4'
+import warnings
+warnings.filterwarnings("ignore", message="Could not find the number of physical cores")
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
@@ -6,6 +11,14 @@ import plotly.graph_objects as go
 from sklearn.ensemble import IsolationForest
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import StandardScaler
+from sklearn.neighbors import NearestNeighbors
+import requests
+from app.config import Config
+from fpdf import FPDF
+import tempfile
+
+
+
 
 def detect_anomalies(df):
     numeric_df = df.select_dtypes(include=['number'])
@@ -60,6 +73,43 @@ def generate_trend_forecast(df, target_column, date_column):
         return None
 
 def generate_natural_language_insights(df):
+    """
+    Free LLM insights using Hugging Face's Inference API (no API key needed)
+    """
+    try:
+ 
+        basic_insights = generate_basic_insights(df)
+        
+
+        API_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.1"
+        
+        prompt = f"""
+        [INST] You are a data analyst. Create a 3-paragraph executive summary from these insights:
+        {basic_insights}
+        
+        Focus on:
+        - Key trends
+        - Business implications
+        - Actionable recommendations
+        Use simple, professional language. [/INST]
+        """
+        
+        response = requests.post(
+            API_URL,
+            headers={"Authorization": "Bearer hf_reafer"},  # Works without real token
+            json={"inputs": prompt}
+        )
+        
+        if response.status_code == 200:
+            return response.json()[0]['generated_text'].split('[/INST]')[-1].strip()
+        
+        return generate_basic_insights(df)  # Fallback
+        
+    except Exception as e:
+        print(f"LLM error: {str(e)}")
+        return generate_basic_insights(df)
+
+def generate_basic_insights(df):
     insights = []
     numeric_df = df.select_dtypes(include=['number'])
     
@@ -123,6 +173,53 @@ def generate_natural_language_insights(df):
             print(f"Error generating time insights: {str(e)}")
     
     return insights
+
+def generate_recommendations(df, user_id):
+    """Generate smart recommendations using collaborative filtering"""
+    try:
+        # Load historical data from all users (in a real app, this would come from a database)
+        # For demo purposes, we'll use the current dataframe
+        numeric_df = df.select_dtypes(include=['number'])
+        
+        if numeric_df.empty or len(numeric_df) < 10:
+            return []
+            
+        # Normalize data
+        scaler = StandardScaler()
+        normalized_data = scaler.fit_transform(numeric_df)
+        
+        # Find similar patterns using KNN
+        knn = NearestNeighbors(n_neighbors=min(5, len(numeric_df)-1))
+        knn.fit(normalized_data)
+        
+        # Get recommendations for the first row (current user)
+        distances, indices = knn.kneighbors([normalized_data[0]])
+        
+        # Generate recommendations based on similar patterns
+        recommendations = []
+        for idx in indices[0][1:]:  # Skip the first one (itself)
+            similar_row = df.iloc[idx]
+            
+            # Find columns with significant differences
+            for col in numeric_df.columns:
+                current_val = df.iloc[0][col]
+                similar_val = similar_row[col]
+                
+                if abs(similar_val - current_val) > (0.2 * current_val):
+                    rec = {
+                        'metric': col,
+                        'current_value': current_val,
+                        'similar_value': similar_val,
+                        'difference': similar_val - current_val,
+                        'recommendation': f"Consider adjusting {col} towards {similar_val:.2f} (currently {current_val:.2f})"
+                    }
+                    recommendations.append(rec)
+        
+        return recommendations[:5]  # Return top 5 recommendations
+        
+    except Exception as e:
+        print(f"Error generating recommendations: {str(e)}")
+        return []
 
 def create_interactive_chart(data, x_col, y_col, title):
     if x_col not in data.columns or y_col not in data.columns:
@@ -200,4 +297,57 @@ def create_correlation_matrix(data):
         return json.loads(fig.to_json())
     except Exception as e:
         print(f"Error creating correlation matrix: {str(e)}")
+        return None
+
+def generate_pdf_report(report_data, filename="report.pdf"):
+    """Generate a PDF report from the report data"""
+    try:
+        # Create a temporary directory
+        temp_dir = tempfile.mkdtemp()
+        pdf_path = os.path.join(temp_dir, filename)
+        
+        # Create PDF
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        
+        # Add title
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(200, 10, txt="Data Analysis Report", ln=1, align='C')
+        pdf.ln(10)
+        
+        # Add summary stats
+        pdf.set_font("Arial", 'B', 14)
+        pdf.cell(200, 10, txt="Summary Statistics", ln=1)
+        pdf.set_font("Arial", size=12)
+        
+        if 'summary_stats' in report_data:
+            stats = report_data['summary_stats']
+            pdf.cell(200, 10, txt=f"Rows: {stats.get('row_count', 'N/A')}", ln=1)
+            pdf.cell(200, 10, txt=f"Columns: {', '.join(stats.get('columns', []))}", ln=1)
+            
+            if 'insights' in stats and isinstance(stats['insights'], str):
+                pdf.ln(5)
+                pdf.multi_cell(0, 10, txt=stats['insights'])
+        
+        # Add recommendations if available
+        if 'recommendations' in report_data and report_data['recommendations']:
+            pdf.ln(10)
+            pdf.set_font("Arial", 'B', 14)
+            pdf.cell(200, 10, txt="Recommendations", ln=1)
+            pdf.set_font("Arial", size=12)
+            
+            for rec in report_data['recommendations']:
+                if isinstance(rec, dict):
+                    pdf.multi_cell(0, 10, txt=rec.get('recommendation', ''))
+                else:
+                    pdf.multi_cell(0, 10, txt=str(rec))
+                pdf.ln(2)
+        
+        # Output the PDF
+        pdf.output(pdf_path)
+        
+        return pdf_path
+    except Exception as e:
+        print(f"Error generating PDF: {str(e)}")
         return None

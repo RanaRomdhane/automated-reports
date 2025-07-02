@@ -34,3 +34,5 @@ class Config:
             raise ValueError("Email notifications enabled but no SMTP username provided")
         if not cls.SECRET_KEY or len(cls.SECRET_KEY) < 16:
             raise ValueError("Invalid or weak SECRET_KEY")
+        if not cls.OPENAI_API_KEY:
+            print("Warning: OPENAI_API_KEY not set - some features may not work")

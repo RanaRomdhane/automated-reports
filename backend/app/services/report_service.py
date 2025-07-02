@@ -1,4 +1,5 @@
 from flask import request, jsonify
+from flask import send_file
 from werkzeug.utils import secure_filename
 from datetime import datetime
 import os
@@ -14,7 +15,9 @@ from app.utils.ai_analysis import (
     detect_anomalies,
     generate_trend_forecast,
     create_interactive_chart,
-    create_correlation_matrix
+    create_correlation_matrix,
+    generate_recommendations,
+    generate_pdf_report
 )
 from app.utils.file_handling import validate_file_extension
 from app.utils.email import send_report_notification
@@ -55,7 +58,7 @@ def upload_file(current_user):
     db.session.commit()
     
     try:
-        report_data = generate_report_sync(filepath, template_id)
+        report_data = generate_report_sync(filepath, template_id, current_user.id)
         
         report = GeneratedReport(
             template_id=template_id,
@@ -93,7 +96,7 @@ def upload_file(current_user):
             'code': 500
         }), 500
 
-def generate_report_sync(file_path, template_id):
+def generate_report_sync(file_path, template_id, user_id):
     """Synchronous report generation"""
     try:
         if file_path.endswith(('.xlsx', '.xls')):
@@ -123,7 +126,8 @@ def generate_report_sync(file_path, template_id):
                 'insights': generate_natural_language_insights(df)
             },
             'visualizations': {},
-            'ai_analysis': {}
+            'ai_analysis': {},
+            'recommendations': generate_recommendations(df, user_id)
         }
         
         # Recursive function to convert numpy types
@@ -171,7 +175,6 @@ def generate_report_sync(file_path, template_id):
         
     except Exception as e:
         raise Exception(f"Error generating report: {str(e)}")
-
 
 def list_reports(current_user):
     reports = db.session.query(
@@ -259,6 +262,53 @@ def get_report(current_user, report_id):
                 }
             }
         }), 200
+
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': str(e),
+            'code': 500
+        }), 500
+
+def export_pdf(current_user, report_id):
+    try:
+        # Query the report
+        report = db.session.query(
+            GeneratedReport,
+            UploadedFile
+        ).join(
+            UploadedFile, GeneratedReport.file_id == UploadedFile.id
+        ).filter(
+            GeneratedReport.id == report_id,
+            UploadedFile.user_id == current_user.id
+        ).first()
+
+        if not report:
+            return jsonify({
+                'status': 'error',
+                'message': 'Report not found or not authorized',
+                'code': 404
+            }), 404
+
+        generated_report, uploaded_file = report
+
+        # Handle the report data
+        report_data = generated_report.report_data
+        if isinstance(report_data, str):
+            report_data = json.loads(report_data)
+
+        # Generate PDF
+        pdf_path = generate_pdf_report(report_data, f"report_{report_id}.pdf")
+        if not pdf_path:
+            raise Exception("Failed to generate PDF")
+
+        # Return the PDF file
+        return send_file(
+            pdf_path,
+            as_attachment=True,
+            download_name=f"report_{report_id}.pdf",
+            mimetype='application/pdf'
+        )
 
     except Exception as e:
         return jsonify({

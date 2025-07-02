@@ -1,8 +1,8 @@
-// ReportDashboard.tsx
 "use client";
 
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import { saveAs } from 'file-saver';
 import { 
   BarChart, LineChart, ScatterChart,
   Bar, Line, Scatter,
@@ -24,7 +24,7 @@ interface ReportData {
     row_count: number;
     columns: string[];
     numeric_stats: Record<string, any>;
-    insights?: Array<string | { summary: string; stats?: Record<string, any> }>;
+    insights?: string | Array<string | { summary: string; stats?: Record<string, any> }>;
   };
   visualizations?: {
     revenue_trend?: any;
@@ -35,6 +35,12 @@ interface ReportData {
     anomalies?: any[];
     [key: string]: any;
   };
+  recommendations?: Array<{
+    recommendation: string;
+    metric?: string;
+    current_value?: number;
+    similar_value?: number;
+  }>;
 }
 
 export default function ReportDashboard({ reportId }: { reportId: number }) {
@@ -119,6 +125,24 @@ export default function ReportDashboard({ reportId }: { reportId: number }) {
     );
   };
 
+  const handleExportPDF = async () => {
+    try {
+      const response = await axios.get(`http://localhost:5000/api/reports/${reportId}/export`, {
+        headers: { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/pdf'
+        },
+        responseType: 'blob'
+      });
+  
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      saveAs(blob, `report_${reportId}.pdf`);
+    } catch (error) {
+      console.error('Error exporting PDF:', error);
+      setError('Failed to export PDF. Please try again.');
+    }
+  };
+
   if (loading) return <LoadingSkeleton />;
   if (error) return <ErrorDisplay message={error} />;
   if (!report) return <NoDataDisplay />;
@@ -135,34 +159,46 @@ export default function ReportDashboard({ reportId }: { reportId: number }) {
         className="bg-gray-900/50 backdrop-blur-lg rounded-2xl shadow-2xl overflow-hidden border border-gray-800 mb-8"
       >
         <div className="p-6 md:p-8">
-<div className="flex flex-col md:flex-row justify-between items-start md:items-center">
-  <div>
-    <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
-      Analytics Dashboard
-    </h1>
-    <div className="flex items-center space-x-4 mt-2">
-      <span className="text-sm text-gray-400">
-        <span className="font-medium">Report ID:</span> {report.id}
-      </span>
-      <span className="hidden md:block text-sm text-gray-400">
-        <span className="font-medium">File:</span> {report.filename}
-      </span>
-      <span className="text-sm text-gray-400">
-        <span className="font-medium">Uploaded:</span> {new Date(report.upload_date).toLocaleString()}
-      </span>
-    </div>
-  </div>
-  
-  <button 
-    onClick={() => window.location.href = '/dashboard'}
-    className="mt-4 md:mt-0 px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-all duration-200 flex items-center"
-  >
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-      <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
-    </svg>
-    Back to Upload
-  </button>
-</div>
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">
+                Analytics Dashboard
+              </h1>
+              <div className="flex items-center space-x-4 mt-2">
+                <span className="text-sm text-gray-400">
+                  <span className="font-medium">Report ID:</span> {report.id}
+                </span>
+                <span className="hidden md:block text-sm text-gray-400">
+                  <span className="font-medium">File:</span> {report.filename}
+                </span>
+                <span className="text-sm text-gray-400">
+                  <span className="font-medium">Uploaded:</span> {new Date(report.upload_date).toLocaleString()}
+                </span>
+              </div>
+            </div>
+            
+            <div className="flex items-center space-x-4 mt-4 md:mt-0">
+              <button 
+                onClick={() => window.location.href = '/dashboard'}
+                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition-all duration-200 flex items-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M9.707 16.707a1 1 0 01-1.414 0l-6-6a1 1 0 010-1.414l6-6a1 1 0 011.414 1.414L5.414 9H17a1 1 0 110 2H5.414l4.293 4.293a1 1 0 010 1.414z" clipRule="evenodd" />
+                </svg>
+                Back to Upload
+              </button>
+              
+              <button 
+                onClick={handleExportPDF}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition-all duration-200 flex items-center"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+                Export PDF
+              </button>
+            </div>
+          </div>
         </div>
       </motion.div>
 
@@ -226,17 +262,70 @@ export default function ReportDashboard({ reportId }: { reportId: number }) {
               />
             </div>
 
-            {/* Insights */}
+            {/* Natural Language Insights */}
             {report.report_data?.summary_stats?.insights && (
               <ChartContainer title="Key Insights" icon="💡">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {report.report_data.summary_stats.insights.map((insight: any, index: number) => (
+                {typeof report.report_data.summary_stats.insights === 'string' ? (
+                  <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-6">
+                    <h3 className="text-lg font-medium text-gray-300 mb-4">Analysis Summary</h3>
+                    <div className="prose prose-invert max-w-none text-gray-300">
+                      {report.report_data.summary_stats.insights.split('\n').map((paragraph: string, i: number) => (
+                        <p key={i}>{paragraph}</p>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {report.report_data.summary_stats.insights.map((insight: any, index: number) => (
+                      <motion.div
+                        key={index}
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: index * 0.1 }}
+                        className="bg-gray-800/50 hover:bg-gray-800/70 border border-gray-700 rounded-xl p-4 transition-all duration-200"
+                      >
+                        <div className="flex items-start">
+                          <div className="flex-shrink-0 h-5 w-5 text-blue-400 mt-0.5">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2h-1V9z" clipRule="evenodd" />
+                            </svg>
+                          </div>
+                          <div className="ml-3">
+                            <p className="text-gray-300">
+                              {typeof insight === 'string' ? insight : insight.summary}
+                            </p>
+                            {typeof insight === 'object' && insight.stats && (
+                              <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                                {Object.entries(insight.stats).map(([stat, value]) => (
+                                  <div key={stat} className="flex justify-between text-gray-400">
+                                    <span className="capitalize">{stat}:</span>
+                                    <span className="font-medium text-gray-200">
+                                      {typeof value === 'number' ? value.toFixed(2) : String(value)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </ChartContainer>
+            )}
+
+            {/* Smart Recommendations */}
+            {report.report_data?.recommendations && report.report_data.recommendations.length > 0 && (
+              <ChartContainer title="Smart Recommendations" icon="🚀">
+                <div className="space-y-4">
+                  {report.report_data.recommendations.map((rec: any, index: number) => (
                     <motion.div
                       key={index}
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.1 }}
-                      className="bg-gray-800/50 hover:bg-gray-800/70 border border-gray-700 rounded-xl p-4 transition-all duration-200"
+                      className="bg-gray-800/50 hover:bg-gray-800/70 border-l-4 border-blue-500 rounded-r-lg p-4 transition-all duration-200"
                     >
                       <div className="flex items-start">
                         <div className="flex-shrink-0 h-5 w-5 text-blue-400 mt-0.5">
@@ -245,19 +334,20 @@ export default function ReportDashboard({ reportId }: { reportId: number }) {
                           </svg>
                         </div>
                         <div className="ml-3">
-                          <p className="text-gray-300">
-                            {typeof insight === 'string' ? insight : insight.summary}
-                          </p>
-                          {typeof insight === 'object' && insight.stats && (
-                            <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                              {Object.entries(insight.stats).map(([stat, value]) => (
-                                <div key={stat} className="flex justify-between text-gray-400">
-                                  <span className="capitalize">{stat}:</span>
-                                  <span className="font-medium text-gray-200">
-                                    {typeof value === 'number' ? value.toFixed(2) : String(value)}
-                                  </span>
-                                </div>
-                              ))}
+                          <p className="text-gray-300 font-medium">{rec.recommendation}</p>
+                          {rec.metric && (
+                            <div className="mt-2 text-sm text-gray-400">
+                              <span className="font-medium">Metric:</span> {rec.metric}
+                              {rec.current_value !== undefined && (
+                                <span className="ml-2">
+                                  <span className="font-medium">Current:</span> {rec.current_value.toFixed(2)}
+                                </span>
+                              )}
+                              {rec.similar_value !== undefined && (
+                                <span className="ml-2">
+                                  <span className="font-medium">Suggested:</span> {rec.similar_value.toFixed(2)}
+                                </span>
+                              )}
                             </div>
                           )}
                         </div>
